@@ -1,0 +1,32 @@
+version: '3.8'
+
+networks:
+  pizza-network:
+    external: true
+
+services:
+#  postgres:
+#    image: postgres:latest
+#    container_name: postgres
+#    restart: always
+#    environment:
+#      POSTGRES_USER: postgres
+#      POSTGRES_PASSWORD: admin
+#      POSTGRES_DB: user_service
+#    ports:
+#      - "5435:5432"
+
+  pizza-service:
+    build:
+      context: .  # Path to the directory containing the Dockerfile for user-service
+      dockerfile: Dockerfile  # Specify Dockerfile if it's not named 'Dockerfile'
+    container_name: pizza-service
+    restart: always
+    env_file:
+      - .env
+    networks:
+      - pizza-network
+#    depends_on:
+#      - postgres
+    ports:
+      - "8002:8000"
