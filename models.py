@@ -17,5 +17,6 @@ class Pizza(Base):
     name = Column(String, nullable=False, unique=True)
     description = Column(String, nullable=True)
     price = Column(Float, nullable=False)
-    size = Column(Enum(PizzaSize, create_constraint=True, name="pizzasize"), nullable=False)  # Ensures correct Enum format
+    size = Column(Enum(PizzaSize, create_constraint=True, name="pizzasize"), nullable=False)
     availability = Column(Boolean, default=True)
+    outlet_code = Column(String, nullable=True)

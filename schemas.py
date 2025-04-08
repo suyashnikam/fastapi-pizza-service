@@ -15,6 +15,7 @@ class PizzaCreate(BaseModel):
     price: float = Field(..., example=9.99)
     size: PizzaSize = Field(..., example=PizzaSize.MEDIUM)
     availability: bool = Field(default=True)
+    outlet_code: Optional[str] = None
 
 # Schema for updating an existing pizza
 class PizzaUpdate(BaseModel):
@@ -23,10 +24,17 @@ class PizzaUpdate(BaseModel):
     price: Optional[float] = None
     size: Optional[PizzaSize] = None
     availability: Optional[bool] = None
+    outlet_code: Optional[str] = None
 
 # Schema for API response
 class PizzaResponse(PizzaCreate):
     id: int
+    name: str
+    description: Optional[str]
+    price: float
+    size: PizzaSize
+    availability: bool
+    outlet_code: Optional[str] = None
 
     class Config:
         orm_mode = True

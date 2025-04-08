@@ -13,6 +13,3 @@ __pycache__
 .venv
 alembic/versions/*
 !alembic/versions/.gitkeep
-
-
-
