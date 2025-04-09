@@ -4,66 +4,51 @@ import models, schemas, database
 import requests
 from typing import Optional
 from fastapi.encoders import jsonable_encoder
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 pizza_router = APIRouter(prefix="/pizza", tags=["pizza"])
 
-# # Function to validate token with user-service
-# def validate_token(token: str):
-#     headers = {"Authorization": f"Bearer {token}"}
-#     user_service_url = "http://127.0.0.1:8001/auth/validate"
-#
-#     try:
-#         response = requests.get(user_service_url, headers=headers)
-#         response_data = response.json()
-#
-#         if response.status_code != 200 or not response_data.get("is_valid"):
-#             raise HTTPException(
-#                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-#             )
-#
-#         return response_data  # This will contain user details like email and username
-#
-#     except requests.exceptions.RequestException:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="User authentication service unavailable",
-#         )
-
-
+# ✅ Create a pizza
 @pizza_router.post("/create", response_model=schemas.PizzaResponse, status_code=status.HTTP_201_CREATED)
 async def create_pizza(
         pizza: schemas.PizzaCreate,
         db: Session = Depends(database.get_db),
         Authorization: Optional[str] = Header(None)
 ):
-    # if not authorization:
-    #     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization token required")
-    #
-    # # Validate token with user-service
-    # user_data = validate_token(authorization.split(" ")[1])
-
     existing_pizza = db.query(models.Pizza).filter(models.Pizza.name == pizza.name).first()
     if existing_pizza:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pizza already exists")
 
-    # Ensure size is stored as an Enum instance
+    if pizza.outlet_code:
+        outlet_service_url = os.getenv("OUTLET_SERVICE_BASE_URL", "http://127.0.0.1:8005") + f"/outlet/by-code/{pizza.outlet_code}"
+        try:
+            headers = {"Authorization": f"{Authorization}"}
+            response = requests.get(outlet_service_url, headers=headers, timeout=5)
+            print(response)
+            if response.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Outlet with code '{pizza.outlet_code}' not found")
+        except requests.exceptions.RequestException:
+            raise HTTPException(status_code=503, detail="Failed to communicate with outlet service")
+
     new_pizza = models.Pizza(
         name=pizza.name,
         description=pizza.description,
         price=pizza.price,
-        size=models.PizzaSize[pizza.size.name],  # Convert Pydantic Enum to SQLAlchemy Enum
-        availability=pizza.availability
+        size=models.PizzaSize[pizza.size.name],
+        availability=pizza.availability,
+        outlet_code=pizza.outlet_code
     )
 
     db.add(new_pizza)
     db.commit()
     db.refresh(new_pizza)
 
-    # Convert the SQLAlchemy model to a JSON-serializable format
     return jsonable_encoder(new_pizza)
 
 
-# ✅ Get all pizzas (No authentication needed)
+# ✅ Get all pizzas
 @pizza_router.get("/", response_model=list[schemas.PizzaResponse])
 async def get_pizzas(
         db: Session = Depends(database.get_db),
@@ -79,19 +64,19 @@ async def get_pizzas(
             description=pizza.description,
             price=pizza.price,
             size=pizza.size.value,  # Convert Enum to string
-            availability=pizza.availability
+            availability=pizza.availability,
+            outlet_code=pizza.outlet_code
         )
         for pizza in pizzas
     ]
 
 
-
-# ✅ Get a specific pizza by ID (No authentication needed)
+# ✅ Get a specific pizza by ID
 @pizza_router.get("/{pizza_id}", response_model=schemas.PizzaResponse)
 async def get_pizza(
         pizza_id: int,
         db: Session = Depends(database.get_db),
-        authorization: Optional[str] = Header(None)
+        Authorization: Optional[str] = Header(None)
 ):
     pizza = db.query(models.Pizza).filter(models.Pizza.id == pizza_id).first()
     if not pizza:
@@ -102,10 +87,11 @@ async def get_pizza(
         description=pizza.description,
         price=pizza.price,
         size=pizza.size.value,  # Convert Enum to string
-        availability=pizza.availability
+        availability=pizza.availability,
+        outlet_code=pizza.outlet_code
     )
 
-
+# ✅ update a specific pizza by ID
 @pizza_router.put("/{pizza_id}", response_model=schemas.PizzaResponse)
 async def update_pizza(
     pizza_id: int,
@@ -116,16 +102,12 @@ async def update_pizza(
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization token required")
 
-    # Validate token with user-service
-    # user_data = validate_token(authorization.split(" ")[1])
-
     pizza = db.query(models.Pizza).filter(models.Pizza.id == pizza_id).first()
     if not pizza:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pizza not found")
 
     update_data = pizza_data.dict(exclude_unset=True)
 
-    # Convert size to uppercase Enum if provided
     if "size" in update_data:
         update_data["size"] = models.PizzaSize(update_data["size"].upper())
 
@@ -135,19 +117,17 @@ async def update_pizza(
     db.commit()
     db.refresh(pizza)
 
-    # Convert SQLAlchemy Enum to string before returning
     return schemas.PizzaResponse(
         id=pizza.id,
         name=pizza.name,
         description=pizza.description,
         price=pizza.price,
         size=pizza.size.value,  # Convert Enum to string
-        availability=pizza.availability
+        availability=pizza.availability,
+        outlet_code=pizza.outlet_code
     )
 
-
-
-
+# ✅ Delete a specific pizza by ID
 @pizza_router.delete("/{pizza_id}", response_model=dict, status_code=status.HTTP_200_OK)
 async def delete_pizza(
     pizza_id: int,
@@ -156,9 +136,6 @@ async def delete_pizza(
 ):
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization token required")
-
-    # Validate token with user-service
-    # user_data = validate_token(authorization.split(" ")[1])
 
     pizza = db.query(models.Pizza).filter(models.Pizza.id == pizza_id).first()
     if not pizza:
@@ -169,3 +146,27 @@ async def delete_pizza(
 
     return {"message": f"Pizza with ID {pizza_id} has been deleted successfully"}
 
+# ✅ Get a pizzas for oulet_code
+@pizza_router.get("/for-outlet/{outlet_code}", response_model=list[schemas.PizzaResponse])
+async def get_pizzas_for_outlet(
+        outlet_code: str,
+        db: Session = Depends(database.get_db),
+        Authorization: Optional[str] = Header(None)
+):
+    print(outlet_code)
+    print(Authorization)
+    pizzas = db.query(models.Pizza).filter(
+        (models.Pizza.outlet_code == outlet_code) | (models.Pizza.outlet_code.is_(None))
+    ).all()
+    return [
+        schemas.PizzaResponse(
+            id=pizza.id,
+            name=pizza.name,
+            description=pizza.description,
+            price=pizza.price,
+            size=pizza.size.value,
+            availability=pizza.availability,
+            outlet_code=pizza.outlet_code
+        )
+        for pizza in pizzas
+    ]

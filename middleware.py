@@ -1,13 +1,13 @@
 from dotenv import load_dotenv
-import os
-import requests
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-from fastapi import status
 from starlette.requests import Request
-
-# Load environment variables
+import os
+import requests
+from fastapi import status
 load_dotenv()
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         try:
@@ -46,10 +46,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
     async def is_valid_token(self, token: str):
-        import os
-        import requests
-        from fastapi import status
-        print(os.getenv("USER_SERVICE_BASE_URL"))
         user_service_url = os.getenv("USER_SERVICE_BASE_URL", "http://127.0.0.1:8001") + "/auth/validate"
         headers = {"Authorization": f"Bearer {token}"}
 
