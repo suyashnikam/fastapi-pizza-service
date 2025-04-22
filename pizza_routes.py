@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-pizza_router = APIRouter(prefix="/pizza", tags=["pizza"])
+pizza_router = APIRouter(prefix="/api/v1/pizza", tags=["pizza"])
 
 # ✅ Create a pizza
 @pizza_router.post("/create", response_model=schemas.PizzaResponse, status_code=status.HTTP_201_CREATED)
@@ -33,7 +33,7 @@ async def create_pizza(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pizza already exists")
 
     if pizza.outlet_code:
-        outlet_service_url = os.getenv("OUTLET_SERVICE_BASE_URL", "http://127.0.0.1:8005") + f"/outlet/by-code/{pizza.outlet_code}"
+        outlet_service_url = os.getenv("OUTLET_SERVICE_BASE_URL", "http://127.0.0.1:8003") + f"/api/v1/outlet/by-code/{pizza.outlet_code}"
         try:
             headers = {"Authorization": f"{Authorization}"}
             response = requests.get(outlet_service_url, headers=headers, timeout=5)
@@ -186,8 +186,6 @@ async def get_pizzas_for_outlet(
         Authorization: Optional[str] = Header(None),
         Authorize: AuthJWT = Depends()
 ):
-    print(outlet_code)
-    print(Authorization)
 
     try:
         Authorize.jwt_required()
@@ -196,10 +194,11 @@ async def get_pizzas_for_outlet(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     outlet_service_url = os.getenv("OUTLET_SERVICE_BASE_URL",
-                                   "http://127.0.0.1:8003") + f"/outlet/by-code/{outlet_code}"
+                                   "http://127.0.0.1:8003") + f"/api/v1/outlet/{outlet_code}"
     try:
         headers = {"Authorization": Authorization}
         response = requests.get(outlet_service_url, headers=headers, timeout=5)
+        print(response)
         if response.status_code != 200:
             raise HTTPException(status_code=404, detail=f"Outlet with code '{outlet_code}' not found")
     except requests.exceptions.RequestException:

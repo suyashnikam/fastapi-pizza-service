@@ -46,7 +46,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
     async def is_valid_token(self, token: str):
-        user_service_url = os.getenv("USER_SERVICE_BASE_URL", "http://127.0.0.1:8001") + "/auth/validate"
+        user_service_url = os.getenv("USER_SERVICE_BASE_URL", "http://127.0.0.1:8001") + "/api/v1/auth/validate"
         headers = {"Authorization": f"Bearer {token}"}
 
         try:
