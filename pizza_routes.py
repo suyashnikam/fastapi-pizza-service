@@ -33,7 +33,7 @@ async def create_pizza(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pizza already exists")
 
     if pizza.outlet_code:
-        outlet_service_url = os.getenv("OUTLET_SERVICE_BASE_URL", "http://127.0.0.1:8003") + f"/api/v1/outlet/by-code/{pizza.outlet_code}"
+        outlet_service_url = os.getenv("OUTLET_SERVICE_BASE_URL", "http://127.0.0.1:8003") + f"/api/v1/outlet/{pizza.outlet_code}"
         try:
             headers = {"Authorization": f"{Authorization}"}
             response = requests.get(outlet_service_url, headers=headers, timeout=5)
