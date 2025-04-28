@@ -8,6 +8,8 @@ from fastapi.encoders import jsonable_encoder
 import os
 from dotenv import load_dotenv
 load_dotenv()
+from redis_client import redis_client
+import json
 
 pizza_router = APIRouter(prefix="/api/v1/pizza", tags=["pizza"])
 
@@ -56,51 +58,70 @@ async def create_pizza(
     db.commit()
     db.refresh(new_pizza)
 
+    redis_client.delete("all_pizzas")
+    if pizza.outlet_code:
+        redis_client.delete(f"outlet_pizzas:{pizza.outlet_code}")
+
     return jsonable_encoder(new_pizza)
 
 
 # ✅ Get all pizzas
 @pizza_router.get("/", response_model=list[schemas.PizzaResponse])
 async def get_pizzas(
-        db: Session = Depends(database.get_db),
-        authorization: Optional[str] = Header(None)
+    db: Session = Depends(database.get_db),
+    authorization: Optional[str] = Header(None)
 ):
-    pizzas = db.query(models.Pizza).all()
+    cache_key = "all_pizzas"
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
 
-    # Convert enum to string for response
-    return [
+    pizzas = db.query(models.Pizza).all()
+    data = [
         schemas.PizzaResponse(
             id=pizza.id,
             name=pizza.name,
             description=pizza.description,
             price=pizza.price,
-            size=pizza.size.value,  # Convert Enum to string
+            size=pizza.size.value,
             availability=pizza.availability,
             outlet_code=pizza.outlet_code
-        )
+        ).dict()
         for pizza in pizzas
     ]
+
+    redis_client.set(cache_key, json.dumps(data), ex=300)  # Cache for 5 mins
+    return data
 
 
 # ✅ Get a specific pizza by ID
 @pizza_router.get("/{pizza_id}", response_model=schemas.PizzaResponse)
 async def get_pizza(
-        pizza_id: int,
-        db: Session = Depends(database.get_db),
-        Authorization: Optional[str] = Header(None)
+    pizza_id: int,
+    db: Session = Depends(database.get_db),
+    Authorization: Optional[str] = Header(None)
 ):
+    cache_key = f"pizza:{pizza_id}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
     pizza = db.query(models.Pizza).filter(models.Pizza.id == pizza_id).first()
     if not pizza:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pizza not found")
-    return schemas.PizzaResponse(
+
+    data = schemas.PizzaResponse(
         id=pizza.id,
         name=pizza.name,
         description=pizza.description,
         price=pizza.price,
-        size=pizza.size.value,  # Convert Enum to string
+        size=pizza.size.value,
         availability=pizza.availability,
         outlet_code=pizza.outlet_code
-    )
+    ).dict()
+
+    redis_client.set(cache_key, json.dumps(data), ex=300)
+    return data
 
 # ✅ update a specific pizza by ID
 @pizza_router.put("/{pizza_id}", response_model=schemas.PizzaResponse)
@@ -139,6 +160,12 @@ async def update_pizza(
     db.commit()
     db.refresh(pizza)
 
+    # Invalidate cache
+    redis_client.delete("all_pizzas")
+    redis_client.delete(f"pizza:{pizza_id}")
+    if pizza.outlet_code:
+        redis_client.delete(f"outlet_pizzas:{pizza.outlet_code}")
+
     return schemas.PizzaResponse(
         id=pizza.id,
         name=pizza.name,
@@ -176,17 +203,22 @@ async def delete_pizza(
     db.delete(pizza)
     db.commit()
 
+    # Invalidate cache
+    redis_client.delete("all_pizzas")
+    redis_client.delete(f"pizza:{pizza_id}")
+    if pizza.outlet_code:
+        redis_client.delete(f"outlet_pizzas:{pizza.outlet_code}")
+
     return {"message": f"Pizza with ID {pizza_id} has been deleted successfully"}
 
 # ✅ Get a pizzas for oulet_code
 @pizza_router.get("/for-outlet/{outlet_code}", response_model=list[schemas.PizzaResponse])
 async def get_pizzas_for_outlet(
-        outlet_code: str,
-        db: Session = Depends(database.get_db),
-        Authorization: Optional[str] = Header(None),
-        Authorize: AuthJWT = Depends()
+    outlet_code: str,
+    db: Session = Depends(database.get_db),
+    Authorization: Optional[str] = Header(None),
+    Authorize: AuthJWT = Depends()
 ):
-
     try:
         Authorize.jwt_required()
         role = Authorize.get_raw_jwt().get("role")
@@ -198,15 +230,21 @@ async def get_pizzas_for_outlet(
     try:
         headers = {"Authorization": Authorization}
         response = requests.get(outlet_service_url, headers=headers, timeout=5)
-        print(response)
         if response.status_code != 200:
             raise HTTPException(status_code=404, detail=f"Outlet with code '{outlet_code}' not found")
     except requests.exceptions.RequestException:
         raise HTTPException(status_code=503, detail="Failed to communicate with outlet service")
+
+    cache_key = f"outlet_pizzas:{outlet_code}"
+    cached = redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
     pizzas = db.query(models.Pizza).filter(
         (models.Pizza.outlet_code == outlet_code) | (models.Pizza.outlet_code.is_(None))
     ).all()
-    return [
+
+    data = [
         schemas.PizzaResponse(
             id=pizza.id,
             name=pizza.name,
@@ -215,6 +253,9 @@ async def get_pizzas_for_outlet(
             size=pizza.size.value,
             availability=pizza.availability,
             outlet_code=pizza.outlet_code
-        )
+        ).dict()
         for pizza in pizzas
     ]
+
+    redis_client.set(cache_key, json.dumps(data), ex=300)
+    return data
